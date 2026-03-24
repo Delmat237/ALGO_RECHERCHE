@@ -210,30 +210,58 @@
     }
 
     function nextStep() {
-        if (queue.length === 0) return;
-        let algo = document.getElementById('algoSelect').value;
-        if (algo === "ALPHABETA") {
-            document.getElementById('log').innerHTML += "> Mode Manuel Alpha-Bêta : modifiez les valeurs via double-clic.<br>";
-            return;
-        }
-        history.push({ nodes: nodes.map(n => ({...n})), queue: [...queue], curr: currentProcessingNode });
-        if (algo === "ASTAR") queue.sort((a, b) => (a.dist + a.h) - (b.dist + b.h));
-        else queue.sort((a, b) => a.dist - b.dist);
-        currentProcessingNode = queue.shift();
-        if (currentProcessingNode.dist === Infinity) return;
-        currentProcessingNode.visited = true;
-        edges.forEach(edge => {
-            let neighbor = null;
-            if (edge.from.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.to.label);
-            else if (edge.to.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.from.label);
-            if (neighbor && !neighbor.visited) {
-                let d = currentProcessingNode.dist + edge.weight;
-                if (d < neighbor.dist) neighbor.dist = d;
-            }
-        });
-        document.getElementById('log').innerHTML += `> Visite ${currentProcessingNode.label}<br>`;
-        document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+    if (queue.length === 0) {
+        document.getElementById('log').innerHTML += "<b>> Simulation terminée.</b><br>";
+        return;
     }
+
+    let algo = document.getElementById('algoSelect').value;
+    
+    // Alpha-Bêta reste en mode manuel pour vos explications
+    if (algo === "ALPHABETA") {
+        document.getElementById('log').innerHTML += "> Mode Manuel : Ajustez α, β et V via double-clic.<br>";
+        return;
+    }
+
+    // Sauvegarde de l'état pour le bouton "Retour"
+    history.push({ nodes: nodes.map(n => ({...n})), queue: [...queue], curr: currentProcessingNode });
+
+    // Tri de la file selon l'algorithme (f = g + h pour A*, g seul pour Dijkstra)
+    if (algo === "ASTAR") queue.sort((a, b) => (a.dist + a.h) - (b.dist + b.h));
+    else queue.sort((a, b) => a.dist - b.dist);
+
+    currentProcessingNode = queue.shift();
+    if (currentProcessingNode.dist === Infinity) return;
+
+    currentProcessingNode.visited = true;
+    
+    // Log détaillé de la visite
+    let logMsg = `<span style="color: #60a5fa">● Analyse de ${currentProcessingNode.label}</span> (d=${currentProcessingNode.dist})<br>`;
+    
+    edges.forEach(edge => {
+        let neighbor = null;
+        if (edge.from.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.to.label);
+        else if (edge.to.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.from.label);
+
+        if (neighbor && !neighbor.visited) {
+            let newDist = currentProcessingNode.dist + edge.weight;
+            let logDetail = `&nbsp;&nbsp;→ Voisin ${neighbor.label}: `;
+            
+            if (newDist < neighbor.dist) {
+                logDetail += `<span style="color: #4ade80">${neighbor.dist === Infinity ? '∞' : neighbor.dist} → ${newDist}</span> (MAJ)`;
+                neighbor.dist = newDist;
+            } else {
+                logDetail += `<span style="color: #94a3b8">${newDist} >= ${neighbor.dist}</span> (Ignoré)`;
+            }
+            logMsg += logDetail + "<br>";
+        }
+    });
+
+    document.getElementById('log').innerHTML += logMsg;
+    // Auto-scroll vers le bas
+    let logDiv = document.getElementById('log');
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
 
     function prevStep() {
         if (history.length === 0) return;
