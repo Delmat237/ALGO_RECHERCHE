@@ -21,7 +21,7 @@ Ce projet est un simulateur interactif de graphes développé pour aider à la c
 
 ## 🛠️ Installation
 
-1.  Téléchargez le fichier `ALGO_RECH.html`.
+1.  Téléchargez le fichier `index.html`.
 2.  Ouvrez-le simplement dans un navigateur web moderne (Chrome, Firefox, Edge).
 3.  Aucune installation de serveur n'est requise (fonctionne en local via CDN p5.js et Lucide).
 
