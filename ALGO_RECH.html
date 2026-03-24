@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Dijkstra & A* Final Pro - ENSPY</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root { --primary: #2563eb; --success: #22c55e; --accent: #f59e0b; --danger: #ef4444; }
+        body { font-family: 'Inter', sans-serif; margin: 0; display: flex; background: #f8fafc; overflow: hidden; }
+        #sidebar { width: 340px; background: white; border-right: 1px solid #e2e8f0; padding: 15px; z-index: 10; height: 100vh; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.05); }
+        .btn { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px; margin-bottom: 5px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 500; }
+        .btn.active { background: var(--primary); color: white; }
+        select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 10px; font-family: inherit; }
+        .btn-run { background: var(--success); color: white; border: none; font-weight: bold; margin-top: 5px; }
+        .nav-group { display: flex; justify-content: space-between; margin-top: 10px; }
+        #log { flex-grow: 1; margin-top: 10px; font-family: 'Fira Code', monospace; font-size: 0.72rem; background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 6px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h3 style="margin:0 0 10px 0;">Simulateur d'Algorithmes</h3>
+    
+    <label style="font-size: 0.8rem; color: #64748b;">Algorithme :</label>
+    <select id="algoSelect">
+	    <option value="DIJKSTRA">Dijkstra</option>
+	    <option value="ASTAR">A* (Heuristique)</option>
+	    <option value="ALPHABETA">Alpha-Bêta Pruning</option>
+     </select>
+
+    <button class="btn active" id="btn-NODE" onclick="setMode('NODE')"><i data-lucide="plus-circle"></i> Sommet (Pose/Modif)</button>
+    <button class="btn" id="btn-EDGE" onclick="setMode('EDGE')"><i data-lucide="git-branch"></i> Arête (Poids)</button>
+    <button class="btn" id="btn-DELETE" onclick="setMode('DELETE')" style="color: var(--danger)"><i data-lucide="trash-2"></i> Supprimer</button>
+    
+    <button class="btn btn-run" id="btnInit" onclick="initSimulation()"><i data-lucide="play-circle"></i> INITIALISER</button>
+    
+    <div class="nav-group" id="navBtns" style="display:none">
+        <button class="btn" style="width:48%" onclick="prevStep()"><i data-lucide="arrow-left"></i> Retour</button>
+        <button class="btn" style="width:48%; background: var(--accent); color:white" onclick="nextStep()">Suivant <i data-lucide="arrow-right"></i></button>
+    </div>
+
+    <button class="btn" id="btnExit" onclick="exitSimulation()" style="margin-top:10px; display:none"><i data-lucide="x-circle"></i> Quitter</button>
+
+    <div id="log">> Prêt...</div>
+    <button class="btn" onclick="resetFull()" style="margin-top:auto; color: var(--danger); border-color: var(--danger)"><i data-lucide="trash"></i> Reset Graphe</button>
+</div>
+
+<div id="canvas-container"></div>
+
+<script>
+    let nodes = []; let edges = []; let mode = 'NODE'; let selectedNode = null;
+    let zoom = 1.0; let offsetX = 0; let offsetY = 0; let draggingNode = null;
+    let history = []; let queue = []; let isRunning = false; let currentProcessingNode = null;
+
+    function setup() {
+        let cnv = createCanvas(windowWidth - 340, windowHeight);
+        cnv.parent('canvas-container');
+        lucide.createIcons();
+    }
+
+    function draw() {
+        background(255);
+        translate(width/2 + offsetX, height/2 + offsetY);
+        scale(zoom);
+        
+        // Quadrillage
+        stroke(242); strokeWeight(1/zoom);
+        for (let x = -2000; x <= 2000; x += 50) line(x, -2000, x, 2000);
+        for (let y = -2000; y <= 2000; y += 50) line(-2000, y, 2000, y);
+
+        // Arêtes
+        edges.forEach(e => {
+            stroke(148, 163, 184); strokeWeight(2/zoom);
+            line(e.from.x, e.from.y, e.to.x, e.to.y);
+            if (e.weight > 0) {
+                let midX = (e.from.x + e.to.x)/2; let midY = (e.from.y + e.to.y)/2;
+                fill(255); stroke(148, 163, 184); strokeWeight(1/zoom);
+                rect(midX-12/zoom, midY-8/zoom, 24/zoom, 16/zoom);
+                fill(0); noStroke(); textAlign(CENTER, CENTER); textSize(12/zoom);
+                text(e.weight, midX, midY);
+            }
+        });
+
+        let currentAlgo = document.getElementById('algoSelect').value;
+
+        // Sommets
+        nodes.forEach(n => {
+            stroke(30, 41, 59); 
+            if (n === currentProcessingNode || n === selectedNode) { fill('#3b82f6'); strokeWeight(4/zoom); }
+            else if (n.visited) { fill('#22c55e'); strokeWeight(2/zoom); }
+            else { fill(255); strokeWeight(1.5/zoom); }
+            
+            circle(n.x, n.y, 45);
+            fill(n === currentProcessingNode || n === selectedNode || n.visited ? 255 : 0);
+            noStroke(); textAlign(CENTER, CENTER); textSize(14/zoom); text(n.label, n.x, n.y);
+            
+            textSize(10/zoom); 
+            // Affichage A*
+            if (currentAlgo === "ASTAR") {
+                fill('#64748b');
+                text("h="+n.h, n.x, n.y - 35/zoom);
+            }
+            
+            // Affichage Alpha-Bêta
+         
+		if (currentAlgo === "ALPHABETA") {
+		    fill('#1e293b');
+		    
+		    // Augmentez le chiffre ici (ex: de 9 à 14)
+		    textSize(14/zoom); 
+		    
+		    let info = `α:${n.alpha} β:${n.beta}`;
+		    
+		    // Vous devrez peut-être ajuster la position Y (-55 au lieu de -45) 
+		    // pour éviter que le texte ne chevauche le cercle
+		    text(info, n.x, n.y - 55/zoom);
+		    
+		    fill('#2563eb');
+		    textSize(11/zoom);
+		    text(`V: ${n.v !== undefined ? n.v : '?'}`, n.x, n.y + 35/zoom);
+		}
+
+            // Affichage Dijkstra / G-cost
+            if(currentAlgo !== "ALPHABETA" && n.dist !== Infinity) { 
+                fill('#ef4444'); text("g="+n.dist, n.x, n.y + 35/zoom); 
+            }
+        });
+    }
+
+    function mousePressed() {
+        if (mouseX < 0 || mouseButton === RIGHT) return;
+        let wX = (mouseX - width/2 - offsetX) / zoom;
+        let wY = (mouseY - height/2 - offsetY) / zoom;
+        let target = nodes.find(n => dist(wX, wY, n.x, n.y) < 25);
+
+        if (mode === 'NODE') {
+            if (target) {
+                draggingNode = target;
+            } else if (!isRunning) {
+                let defaultLabel = String.fromCharCode(65 + nodes.length);
+                let label = prompt("Nom du nouveau sommet :", defaultLabel);
+                if (label === null) return;
+                nodes.push({ 
+                    x: wX, y: wY, label: label.toUpperCase(), h: 0, 
+                    alpha: -Infinity, beta: Infinity, v: undefined, 
+                    dist: Infinity, visited: false 
+                });
+            }
+        } else if (mode === 'EDGE' && target && !isRunning) {
+            if (!selectedNode) selectedNode = target;
+            else if (selectedNode !== target) {
+                let w = prompt(`Poids de l'arête ${selectedNode.label} -> ${target.label} :`, "1");
+                if (w !== null) edges.push({ from: selectedNode, to: target, weight: parseInt(w || 0) });
+                selectedNode = null;
+            }
+        } else if (mode === 'DELETE' && !isRunning && target) {
+            nodes = nodes.filter(n => n !== target);
+            edges = edges.filter(e => e.from !== target && e.to !== target);
+        }
+    }
+
+    function mouseDragged() {
+        if (mouseButton === RIGHT) { offsetX += mouseX - pmouseX; offsetY += mouseY - pmouseY; }
+        else if (draggingNode) {
+            draggingNode.x = (mouseX - width/2 - offsetX) / zoom;
+            draggingNode.y = (mouseY - height/2 - offsetY) / zoom;
+        }
+    }
+
+    function doubleClicked() {
+        let wX = (mouseX - width/2 - offsetX) / zoom;
+        let wY = (mouseY - height/2 - offsetY) / zoom;
+        let target = nodes.find(n => dist(wX, wY, n.x, n.y) < 25);
+        
+        if (target && !isRunning) {
+            let currentAlgo = document.getElementById('algoSelect').value;
+            if (currentAlgo === "ALPHABETA") {
+                let vVal = prompt(`Valeur V pour ${target.label} (vide si inconnu) :`, target.v !== undefined ? target.v : "");
+                target.v = vVal !== "" ? parseInt(vVal) : undefined;
+                target.alpha = prompt(`Valeur Alpha :`, target.alpha);
+                target.beta = prompt(`Valeur Bêta :`, target.beta);
+            } else {
+                let newLabel = prompt(`Nouveau nom :`, target.label);
+                if (newLabel) target.label = newLabel.toUpperCase();
+                let newH = prompt(`Nouvelle heuristique h(n) :`, target.h);
+                if (newH !== null) target.h = parseInt(newH);
+            }
+        }
+    }
+
+    function mouseReleased() { draggingNode = null; }
+    function mouseWheel(event) { zoom = constrain(zoom - event.delta * 0.001, 0.2, 5); return false; }
+    function setMode(m) { mode = m; selectedNode = null; document.querySelectorAll('.btn').forEach(b => b.classList.remove('active')); document.getElementById('btn-'+m).classList.add('active'); }
+
+    function initSimulation() {
+        if (nodes.length < 2) return;
+        let startName = prompt("Sommet de départ ?", nodes[0].label).toUpperCase();
+        let sNode = nodes.find(n => n.label === startName);
+        if (!sNode) return;
+        isRunning = true;
+        nodes.forEach(n => { n.dist = Infinity; n.visited = false; });
+        sNode.dist = 0;
+        queue = [...nodes];
+        history = [];
+        document.getElementById('navBtns').style.display = 'flex';
+        document.getElementById('btnExit').style.display = 'block';
+        document.getElementById('btnInit').style.display = 'none';
+        document.getElementById('log').innerHTML = `<b>Mode: ${document.getElementById('algoSelect').value}</b><br>`;
+    }
+
+    function nextStep() {
+        if (queue.length === 0) return;
+        let algo = document.getElementById('algoSelect').value;
+        if (algo === "ALPHABETA") {
+            document.getElementById('log').innerHTML += "> Mode Manuel Alpha-Bêta : modifiez les valeurs via double-clic.<br>";
+            return;
+        }
+        history.push({ nodes: nodes.map(n => ({...n})), queue: [...queue], curr: currentProcessingNode });
+        if (algo === "ASTAR") queue.sort((a, b) => (a.dist + a.h) - (b.dist + b.h));
+        else queue.sort((a, b) => a.dist - b.dist);
+        currentProcessingNode = queue.shift();
+        if (currentProcessingNode.dist === Infinity) return;
+        currentProcessingNode.visited = true;
+        edges.forEach(edge => {
+            let neighbor = null;
+            if (edge.from.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.to.label);
+            else if (edge.to.label === currentProcessingNode.label) neighbor = nodes.find(n => n.label === edge.from.label);
+            if (neighbor && !neighbor.visited) {
+                let d = currentProcessingNode.dist + edge.weight;
+                if (d < neighbor.dist) neighbor.dist = d;
+            }
+        });
+        document.getElementById('log').innerHTML += `> Visite ${currentProcessingNode.label}<br>`;
+        document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+    }
+
+    function prevStep() {
+        if (history.length === 0) return;
+        let state = history.pop();
+        nodes.forEach((n, i) => { n.dist = state.nodes[i].dist; n.visited = state.nodes[i].visited; });
+        queue = state.queue; currentProcessingNode = state.curr;
+    }
+
+    function exitSimulation() {
+        isRunning = false; currentProcessingNode = null;
+        nodes.forEach(n => { n.dist = Infinity; n.visited = false; });
+        document.getElementById('navBtns').style.display = 'none';
+        document.getElementById('btnExit').style.display = 'none';
+        document.getElementById('btnInit').style.display = 'block';
+    }
+
+    function resetFull() { nodes = []; edges = []; exitSimulation(); document.getElementById('log').innerHTML = "> Graphe réinitialisé"; }
+    document.oncontextmenu = () => false;
+</script>
+</body>
+</html>
